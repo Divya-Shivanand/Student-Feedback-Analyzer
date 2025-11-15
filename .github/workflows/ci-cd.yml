@@ -38,12 +38,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Ensure httpx (TestClient dependency)
-        run: |
-          python -m pip install httpx
+        run: python -m pip install httpx
 
       - name: Download NLTK VADER lexicon
-        run: |
-          python -c "import nltk; nltk.download('vader_lexicon')"
+        run: python -c "import nltk; nltk.download('vader_lexicon')"
 
       - name: Add repo root to PYTHONPATH
         run: echo "PYTHONPATH=${{ github.workspace }}" >> $GITHUB_ENV
@@ -62,25 +60,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Log in to GHCR only if CR_PAT secret is set; `if` here checks presence of secret
       - name: Log in to GitHub Container Registry
-        if: ${{ secrets.CR_PAT != '' }}
+        if: ${{ secrets.CR_PAT }}
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
 
-      - name: Build and (optionally) push Docker image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ secrets.CR_PAT != '' }}
+          # Push is false by default. Set `push: true` above with secrets.CR_PAT configured to upload.
+          push: false
           tags: ghcr.io/${{ github.repository_owner }}/student-feedback-analyzer:latest
 
-      - name: Save image digest as artifact (optional)
-        if: ${{ secrets.CR_PAT != '' }}
-        run: echo "Image built and pushed to ghcr.io/${{ github.repository_owner }}/student-feedback-analyzer:latest"
+      - name: Note about pushing images
+        if: ${{ secrets.CR_PAT == '' }}
+        run: echo "CR_PAT not configured — image build completed locally but not pushed. Set CR_PAT secret to enable push."
 
   deploy:
     name: Deploy
@@ -92,7 +92,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to remote server (example via SSH)
-        if: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY != '' }}
+        if: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -100,11 +100,12 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT }}
           script: |
-            docker pull ghcr.io/${{ github.repository_owner }}/student-feedback-analyzer:latest
+            # Example commands to pull and run the container on remote host
+            docker pull ghcr.io/${{ github.repository_owner }}/student-feedback-analyzer:latest || true
             docker stop student-feedback-analyzer || true
             docker rm student-feedback-analyzer || true
             docker run -d --name student-feedback-analyzer -p 8001:8001 ghcr.io/${{ github.repository_owner }}/student-feedback-analyzer:latest
 
-      - name: No deploy configured
-        if: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY == '' }}
-        run: echo "No deploy configured. Set DEPLOY_SSH_PRIVATE_KEY and other secrets to enable automatic deploy."
+      - name: Skip deploy (no SSH key)
+        if: ${{ !secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: echo "No deploy configured. Add DEPLOY_SSH_PRIVATE_KEY and other deploy secrets to enable automatic deployment."
