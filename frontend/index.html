@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Feedback Analyzer</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #e8fff3; /* Mint green background */
+    }
+
+    .wrapper {
+      background: white;
+      max-width: 760px;
+      margin: 40px auto;
+      padding: 25px;
+      border-radius: 14px;
+      box-shadow: 0 6px 22px rgba(0,0,0,0.10);
+    }
+
+    h1 {
+      text-align: center;
+      margin-top: 0;
+      font-size: 30px;
+      color: #00a86b;
+    }
+
+    label { font-weight: 600; color:#005c3b; }
+
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      border-radius: 10px;
+      padding: 10px;
+      border: 1px solid #9cd6bb;
+      resize: vertical;
+      font-size: 15px;
+      background: #ffffff;
+    }
+
+    button {
+      background: #00a86b;
+      padding: 10px 18px;
+      border-radius: 8px;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .result-box, .stats-box, .list-box {
+      background: white;
+      padding: 15px;
+      margin-top: 15px;
+      border-radius: 10px;
+      border: 1px solid #c3eedd;
+    }
+
+    .field {
+      margin-bottom: 8px;
+      color: #005c3b;
+    }
+
+    .field b { color: #003b25; }
+
+    /* Sentiment Pie Chart */
+    .pie {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      margin: 15px auto;
+      border: 6px solid white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.12);
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      font-size:18px;
+      font-weight:bold;
+      background: conic-gradient(#f3f4f6 0deg 360deg);
+      color:#004d31;
+    }
+
+    h3 { color:#00724d; }
+  </style>
+</head>
+
+<body>
+
+<div class="wrapper">
+
+  <h1>Student Feedback Analyzer</h1>
+
+  <!-- Feedback Form -->
+  <label>Enter your Feedback:</label>
+  <textarea id="feedback" placeholder="Type your feedback here..."></textarea>
+  <button onclick="send()">Submit</button>
+
+  <!-- Result Box -->
+  <div class="result-box" id="result-box" style="display:none;">
+    <h3>Saved Feedback</h3>
+    <div class="field"><b>Text:</b> <span id="r_text"></span></div>
+    <div class="field"><b>Sentiment Score:</b> <span id="r_sentiment"></span></div>
+    <div class="field"><b>Keywords:</b> <span id="r_keywords"></span></div>
+    <div class="field"><b>Created At:</b> <span id="r_created"></span></div>
+  </div>
+
+  <!-- Pie Chart -->
+  <h3 style="text-align:center;">Sentiment Chart</h3>
+  <div id="sentimentChart" class="pie">--</div>
+
+  <!-- Stats -->
+  <div class="stats-box" id="stats"></div>
+
+  <!-- List -->
+  <h3>Recent Feedbacks:</h3>
+  <div class="list-box" id="list"><em>No feedback yet.</em></div>
+
+</div>
+
+<script>
+const API = "http://localhost:8001";
+
+function renderPie(sentiment) {
+  const pos = Math.max(0, sentiment);
+  const neg = Math.abs(Math.min(0, sentiment));
+  const neu = Math.max(0, 1 - (pos + neg));
+  const total = pos + neg + neu || 1;
+
+  const negAng = (neg / total) * 360;
+  const neuAng = (neu / total) * 360;
+  const startNeu = negAng;
+  const endNeu = negAng + neuAng;
+
+  const chart = document.getElementById("sentimentChart");
+  chart.style.background =
+    `conic-gradient(
+      #ef4444 0deg ${negAng}deg,
+      #fbbf24 ${startNeu}deg ${endNeu}deg,
+      #22c55e ${endNeu}deg 360deg
+    )`;
+
+  chart.innerText = (sentiment >= 0 ? "+" : "") + Math.round(sentiment * 100) + "%";
+}
+
+async function send(){
+  const text = document.getElementById('feedback').value.trim();
+  if(!text){ alert("Enter feedback first."); return; }
+
+  const res = await fetch(API + "/feedback", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({feedback:text})
+  });
+
+  const data = await res.json();
+
+  document.getElementById("result-box").style.display = "block";
+  document.getElementById("r_text").innerText = data.text;
+  document.getElementById("r_sentiment").innerText = data.sentiment.toFixed(4);
+  document.getElementById("r_keywords").innerText = data.keywords;
+  document.getElementById("r_created").innerText = data.created_at;
+
+  await refreshStats();
+}
+
+async function refreshStats(){
+  const stats = await (await fetch(API + "/stats")).json();
+
+  document.getElementById("stats").innerHTML = `
+    <b>Total Feedbacks:</b> ${stats.total_feedbacks}<br>
+    <b>Average Sentiment:</b> ${stats.avg_sentiment.toFixed(2)}<br>
+    <b>Top Keywords:</b> ${stats.top_keywords.join(", ")}
+  `;
+
+  renderPie(stats.avg_sentiment);
+
+  const list = await (await fetch(API + "/feedbacks")).json();
+  document.getElementById("list").innerHTML =
+    list.slice(0,5).map(f => `<div>• ${f.text} (sent: ${f.sentiment.toFixed(2)})</div>`).join("");
+}
+
+refreshStats();
+</script>
+
+</body>
+</html>
